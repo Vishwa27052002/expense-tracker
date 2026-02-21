@@ -1,43 +1,59 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import ExpenseForm from "../components/ExpenseForm";
 import ExpenseList from "../components/ExpenseList";
 import { Expense } from "../types/expense";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
+import { getExpenses, addExpense as dbAddExpense, deleteExpense as dbDeleteExpense } from "./actions";
 
 export default function Home() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [isMounted, setIsMounted] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const fetchExpenses = async () => {
+    try {
+      const data = await getExpenses();
+      setExpenses(data);
+    } catch (error) {
+      console.error("Failed to fetch expenses:", error);
+    }
+  };
 
   useEffect(() => {
     setIsMounted(true);
-    const saved = localStorage.getItem("expenses");
-    if (saved) {
-      setExpenses(JSON.parse(saved));
-    }
+    fetchExpenses();
   }, []);
-
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem("expenses", JSON.stringify(expenses));
-    }
-  }, [expenses, isMounted]);
 
   if (!isMounted) {
     return null; // or a loading spinner
   }
 
-  const addExpense = (newExpense: Omit<Expense, "id">) => {
-    const expense: Expense = {
-      ...newExpense,
-      id: crypto.randomUUID(),
-    };
-    setExpenses([expense, ...expenses]);
+  const addExpense = async (newExpense: Omit<Expense, "id">) => {
+    startTransition(async () => {
+      try {
+        await dbAddExpense({
+          description: newExpense.description,
+          amount: newExpense.amount.toString(),
+          category: newExpense.category,
+        });
+        await fetchExpenses();
+      } catch (error) {
+        console.error("Failed to add expense:", error);
+      }
+    });
   };
 
-  const deleteExpense = (id: string) => {
-    setExpenses(expenses.filter((e) => e.id !== id));
+  const deleteExpense = async (id: string) => {
+    startTransition(async () => {
+      try {
+        await dbDeleteExpense(id);
+        await fetchExpenses();
+      } catch (error) {
+        console.error("Failed to delete expense:", error);
+      }
+    });
   };
 
   return (
